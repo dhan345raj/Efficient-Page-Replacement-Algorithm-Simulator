@@ -98,3 +98,111 @@ class PageReplacementSimulator:
         for col in ["Step", "Page", "Frames", "Fault"]:
             self.tree.heading(col, text=col)
             self.tree.column(col, width=80 if col != "Frames" else 150, anchor=tk.CENTER)
+            self.tree.grid(row=0, column=0, sticky="nsew")
+        self.tree_scroll.grid(row=0, column=1, sticky="ns")
+        self.tree.tag_configure('fault', background='#ffcccc')
+
+        # Statistics
+        self.stats_label = ttk.Label(results_frame, text="", font=('Arial', 10, 'bold'))
+        self.stats_label.grid(row=1, column=0, columnspan=2, pady=5)
+
+        # Add tooltips
+        ToolTip(self.page_entry, "Enter comma-separated page numbers\nExample: 1,2,3,4,1,2")
+        ToolTip(self.frame_entry, "Enter number of available frames\nMust be a positive integer")
+        ToolTip(self.algorithm_menu, "Select page replacement algorithm to simulate")
+
+    def validate_inputs(self):
+        try:
+            pages = self.page_entry.get().strip()
+            if not pages:
+                raise ValueError("Please enter page sequence")
+            self.page_sequence = [int(p.strip()) for p in pages.split(',') if p.strip()]
+            
+            self.num_frames = int(self.frame_entry.get())
+            if self.num_frames <= 0:
+                raise ValueError("Frame count must be ≥ 1")
+            return True
+        except ValueError as e:
+            messagebox.showerror("Input Error", f"Invalid input:\n{str(e)}")
+            return False
+
+    def run_simulation(self):
+        if not self.validate_inputs():
+            return
+
+        algo = self.algorithm_var.get()
+        result = getattr(self, algo.lower())()
+        self.display_results(result, algo)
+        self.current_result = result
+
+    def compare_algorithms(self):
+        if not self.validate_inputs():
+            return
+
+        results = {}
+        for algo in ["FIFO", "LRU", "Clock"]:
+            results[algo] = getattr(self, algo.lower())()
+        self.plot_comparison(results)
+
+    def fifo(self):
+        frames = []
+        queue = deque()
+        faults = 0
+        result = []
+
+        for idx, page in enumerate(self.page_sequence):
+            fault = False
+            if page not in frames:
+                fault = True
+                faults += 1
+                if len(frames) >= self.num_frames:
+                    removed = queue.popleft()
+                    frames.remove(removed)
+                frames.append(page)
+                queue.append(page)
+            result.append(self.create_step(idx+1, page, frames.copy(), fault))
+        return {"data": result, "faults": faults}
+
+    def lru(self):
+        frames = OrderedDict()
+        faults = 0
+        result = []
+
+        for idx, page in enumerate(self.page_sequence):
+            fault = False
+            if page not in frames:
+                fault = True
+                faults += 1
+                if len(frames) >= self.num_frames:
+                    frames.popitem(last=False)
+                frames[page] = None
+            else:
+                frames.move_to_end(page)
+            result.append(self.create_step(idx+1, page, list(frames.keys()), fault))
+        return {"data": result, "faults": faults}
+
+    def clock(self):
+        frames = [None] * self.num_frames
+        ref_bits = [0] * self.num_frames
+        ptr = 0
+        faults = 0
+        result = []
+
+        for idx, page in enumerate(self.page_sequence):
+            fault = False
+            if page in frames:
+                ref_bits[frames.index(page)] = 1
+            else:
+                fault = True
+                faults += 1
+                while True:
+                    if ref_bits[ptr] == 0:
+                        frames[ptr] = page
+                        ref_bits[ptr] = 1
+                        ptr = (ptr + 1) % self.num_frames
+                        break
+                    else:
+                        ref_bits[ptr] = 0
+                        ptr = (ptr + 1) % self.num_frames
+            result.append(self.create_step(idx+1, page, [p for p in frames if p is not None], fault))
+        return {"data": result, "faults": faults}
