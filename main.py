@@ -206,3 +206,123 @@ class PageReplacementSimulator:
                         ptr = (ptr + 1) % self.num_frames
             result.append(self.create_step(idx+1, page, [p for p in frames if p is not None], fault))
         return {"data": result, "faults": faults}
+        def create_step(self, step, page, frames, fault):
+        return {
+            "step": step,
+            "page": page,
+            "frames": frames + [''] * (self.num_frames - len(frames)),
+            "fault": "Yes" if fault else "No"
+        }
+
+    def display_results(self, result, algorithm):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        for entry in result["data"]:
+            tags = ('fault',) if entry["fault"] == "Yes" else ()
+            self.tree.insert("", "end", values=(
+                entry["step"],
+                entry["page"],
+                " | ".join(map(str, entry["frames"])),
+                entry["fault"]
+            ), tags=tags)
+        
+        total = len(self.page_sequence)
+        stats = (f"{algorithm} - Page Faults: {result['faults']}/{total} | "
+                f"Hit Ratio: {(total - result['faults'])/total:.1%}")
+        self.stats_label.config(text=stats, font=('Arial', 12, 'bold'))
+        self.current_result = result
+
+    def show_performance_graph(self):
+        if not self.current_result:
+            messagebox.showwarning("No Data", "Please run a simulation first!")
+            return
+
+        fig = plt.figure(figsize=(8, 4))
+        ax = fig.add_subplot(111)
+        
+        cumulative_faults = []
+        current_faults = 0
+        for entry in self.current_result["data"]:
+            if entry['fault'] == "Yes":
+                current_faults += 1
+            cumulative_faults.append(current_faults)
+        
+        ax.plot(range(1, len(self.current_result["data"])+1), cumulative_faults, 
+               marker='o', markersize=5, linestyle='-', linewidth=1.5, color='#2196F3')
+        ax.set_title("Page Faults Over Time", fontsize=14)
+        ax.set_xlabel("Step Number", fontsize=12)
+        ax.set_ylabel("Cumulative Page Faults", fontsize=12)
+        ax.grid(True, linestyle='--', alpha=0.6)
+        
+        graph_window = tk.Toplevel(self.root)
+        graph_window.title("Performance Graph")
+        canvas = FigureCanvasTkAgg(fig, master=graph_window)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def plot_comparison(self, results):
+        fig = plt.figure(figsize=(10, 6))
+        ax = fig.add_subplot(111)
+        algos = list(results.keys())
+        faults = [results[a]['faults'] for a in algos]
+        
+        bars = ax.bar(algos, faults, color=['#4CAF50', '#2196F3', '#FF9800'])
+        ax.set_title("Algorithm Comparison", fontsize=16, pad=20)
+        ax.set_ylabel("Page Faults", fontsize=14)
+        ax.tick_params(axis='both', labelsize=12)
+        
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{height}', ha='center', va='bottom', fontsize=12)
+        
+        top = tk.Toplevel()
+        top.title("Algorithm Comparison")
+        canvas = FigureCanvasTkAgg(fig, master=top)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def load_from_file(self):
+        path = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
+        if path:
+            with open(path, 'r') as f:
+                content = f.read().strip().replace('\n', ',')
+                self.page_entry.delete(0, tk.END)
+                self.page_entry.insert(0, content)
+
+    def save_results(self):
+        if not self.current_result:
+            messagebox.showwarning("Save Error", "No results to save!")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        if file_path:
+            try:
+                with open(file_path, 'w') as f:
+                    f.write(self.stats_label.cget('text') + "\n\n")
+                    f.write(f"{'Step':<5} | {'Page':<5} | {'Frames':<20} | {'Fault'}\n")
+                    f.write("-"*50 + "\n")
+                    
+                    for item in self.tree.get_children():
+                        values = self.tree.item(item, 'values')
+                        f.write(f"{values[0]:<5} | {values[1]:<5} | {values[2]:<20} | {values[3]}\n")
+                
+                messagebox.showinfo("Save Successful", "Results saved successfully!")
+            except Exception as e:
+                messagebox.showerror("Save Error", f"Error saving file: {str(e)}")
+
+    def clear_inputs(self):
+        self.page_entry.delete(0, tk.END)
+        self.frame_entry.delete(0, tk.END)
+        self.tree.delete(*self.tree.get_children())
+        self.stats_label.config(text="")
+        self.current_result = None
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = PageReplacementSimulator(root)
+    root.mainloop()
